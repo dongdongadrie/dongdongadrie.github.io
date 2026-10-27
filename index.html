@@ -17,8 +17,10 @@
   .meta { margin-left:auto; font-size:12px; color:var(--muted); text-align:right; }
   .legend { display:flex; align-items:center; gap:2px; font-size:11px; color:var(--muted); }
   .legend span.c { width:22px; height:12px; display:inline-block; }
-  #chart { position:absolute; top:52px; left:0; right:0; bottom:0; }
-  @media (max-width: 640px) { #chart { top:92px; } .meta { margin-left:0; text-align:left; width:100%; } }
+  .crumbs { position:absolute; top:48px; left:12px; font-size:12px; color:var(--muted); }
+  .crumbs a { color:var(--text); cursor:pointer; text-decoration:underline; }
+  #chart { position:absolute; top:70px; left:0; right:0; bottom:0; }
+  @media (max-width: 640px) { .crumbs { top:88px; } #chart { top:110px; } .meta { margin-left:0; text-align:left; width:100%; } }
 </style>
 </head>
 <body>
@@ -36,6 +38,7 @@
   <div class="legend" id="legend"></div>
   <div class="meta" id="meta">불러오는 중</div>
 </header>
+<div id="crumbs" class="crumbs"></div>
 <div id="chart"></div>
 <script>
 // 데이터: TradingView 스캐너(공식 공개 API 아님). 1분마다 다시 불러온다.
@@ -116,12 +119,12 @@ async function load(mk) {
 }
 
 function color(v, lim) {
-  // 한국식: 상승 빨강, 하락 파랑, 보합 회색
+  // 미국식(사용자 결정): 상승 초록, 하락 빨강, 보합 회색
   if (v == null || isNaN(v)) return "#3a3f47";
   const t = Math.max(-1, Math.min(1, v / lim));
   const mix = (a, b, k) => a.map((c, i) => Math.round(c + (b[i] - c) * k));
-  const grey = [58, 63, 71], red = [214, 40, 57], blue = [36, 99, 235];
-  const c = t >= 0 ? mix(grey, red, t) : mix(grey, blue, -t);
+  const grey = [65, 69, 84], green = [48, 204, 90], red = [246, 53, 56];
+  const c = t >= 0 ? mix(grey, green, t) : mix(grey, red, -t);
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
@@ -138,12 +141,12 @@ function tree(rows) {
   return Object.entries(secs).map(([sec, inds]) => {
     const all = Object.values(inds).flat();
     const sv = wavg(all);
-    return { name: sec, value: all.reduce((a, r) => a + r.cap, 0), chg: sv,
+    return { id: "s:" + sec, sid: "s:" + sec, name: sec, value: all.reduce((a, r) => a + r.cap, 0), chg: sv,
       itemStyle: { color: color(sv, lim) },
       children: Object.entries(inds).map(([ind, list]) => {
         const iv = wavg(list);
-        return { name: ind, value: list.reduce((a, r) => a + r.cap, 0), chg: iv, itemStyle: { color: color(iv, lim) },
-          children: list.map(r => ({ name: r.name, value: r.cap, chg: r[pd], tk: r.t, desc: r.desc, close: r.close, cur: r.cur,
+        return { id: "i:" + sec + ":" + ind, sid: "s:" + sec, iid: "i:" + sec + ":" + ind, name: ind, value: list.reduce((a, r) => a + r.cap, 0), chg: iv, itemStyle: { color: color(iv, lim) },
+          children: list.map(r => ({ id: "t:" + r.t, sid: "s:" + sec, iid: "i:" + sec + ":" + ind, name: r.name, value: r.cap, chg: r[pd], tk: r.t, desc: r.desc, close: r.close, cur: r.cur,
             itemStyle: { color: color(r[pd], lim) } })) };
       }) };
   });
@@ -155,13 +158,24 @@ function legend() {
   el.innerHTML = `<span>${-lim}%</span>` + steps.map(s => `<span class="c" style="background:${color(s * lim, lim)}"></span>`).join("") + `<span>+${lim}%</span>`;
 }
 
+let path = [];       // 확대해 둔 [업종 id, 산업 id]. 갱신 뒤에도 유지한다
+let drawn = null;    // 지금 그려진 시장과 기간. 같으면 데이터만 바꿔 부드럽게 전환
+
 function render() {
   const rows = state.data[state.mk];
   if (!rows) return;
   legend();
+  const key = state.mk + state.pd;
   const at = state.at[state.mk];
   document.getElementById("meta").textContent =
-    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 갱신`;
+    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 갱신 (${state.mk === "us" ? "15" : "20"}분 지연 시세)`;
+  if (drawn === key) {
+    // 같은 화면이면 데이터만 바꾼다. 칸 색과 크기가 애니메이션으로 이어진다
+    chart.setOption({ series: [{ id: "map", data: view(rows) }] });
+    crumbs();
+    return;
+  }
+  drawn = key;
   chart.setOption({
     tooltip: { formatter: (p) => {
       const d = p.data;
@@ -169,8 +183,8 @@ function render() {
       return `<b>${d.name}</b><br>시가총액 가중 ${fmt(d.chg)}`;
     } },
     series: [{
-      type: "treemap", roam: false, nodeClick: "zoomToNode", width: "100%", height: "100%", top: 22, bottom: 0, left: 0, right: 0,
-      breadcrumb: { show: true, top: 0, left: 4, height: 20, itemStyle: { color: "#1a1f26", borderColor: "#2a313a", textStyle: { color: "#e6e8eb" } } },
+      id: "map", type: "treemap", roam: false, nodeClick: false, animationDurationUpdate: 1200, animationEasingUpdate: "cubicInOut", width: "100%", height: "100%", top: 22, bottom: 0, left: 0, right: 0,
+      breadcrumb: { show: false },
       leafDepth: 3, visibleMin: 300,
       upperLabel: { show: true, height: 18, color: "#e6e8eb", fontSize: 11,
         formatter: (p) => `${p.name}  ${fmt(p.data.chg)}` },
@@ -183,19 +197,53 @@ function render() {
         { itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 }, upperLabel: { show: true, fontSize: 10 } },
         { itemStyle: { borderWidth: 0.5, gapWidth: 0 } }
       ],
-      data: tree(rows)
+      data: view(rows)
     }]
   }, true);
+  crumbs();
 }
+
+function view(rows) {
+  // 확대 경로에 맞는 하위 트리만 넘긴다
+  let nodes = tree(rows);
+  for (const id of path) {
+    const n = nodes.find(x => x.id === id);
+    if (!n) { path = []; return tree(rows); }
+    nodes = n.children;
+  }
+  return nodes;
+}
+
+function crumbs() {
+  const el = document.getElementById("crumbs");
+  const names = path.map(id => id.split(":").pop());
+  el.innerHTML = `<a data-i="0">전체</a>` + names.map((n, i) => ` › <a data-i="${i + 1}">${n}</a>`).join("");
+  el.querySelectorAll("a").forEach(a => a.onclick = () => { path = path.slice(0, +a.dataset.i); update(); });
+}
+
+function update() {
+  const rows = state.data[state.mk];
+  if (rows) { chart.setOption({ series: [{ id: "map", data: view(rows) }] }); crumbs(); }
+}
+
+chart.on("click", (p) => {
+  // 업종, 산업, 종목 어느 칸을 눌러도 한 단계씩 들어간다: 전체 → 업종 → 산업
+  const d = p.data;
+  if (p.componentType !== "series" || !d || !d.sid) return;
+  if (path.length === 0) path = [d.sid];
+  else if (path.length === 1 && d.iid) path = [d.sid, d.iid];
+  else return;
+  update();
+});
 
 async function refresh(mk) {
   try { await load(mk); if (mk === state.mk) render(); }
-  catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 1분 뒤 다시 시도: " + e.message; }
+  catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 잠시 뒤 다시 시도: " + e.message; }
 }
 
 document.querySelectorAll("#mk button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#mk button").forEach(x => x.classList.toggle("on", x === b));
-  state.mk = b.dataset.v; state.data[state.mk] ? render() : refresh(state.mk);
+  state.mk = b.dataset.v; path = []; state.data[state.mk] ? render() : refresh(state.mk);
 });
 document.querySelectorAll("#pd button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#pd button").forEach(x => x.classList.toggle("on", x === b));
@@ -205,7 +253,7 @@ const q = new URLSearchParams(location.search);
 if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
 window.addEventListener("resize", () => chart.resize());
 refresh(state.mk);
-setInterval(() => refresh(state.mk), 60000);
+setInterval(() => refresh(state.mk), 15000);  // 15초마다. 원천 시세 자체가 15~20분 지연
 </script>
 </body>
 </html>
