@@ -8,18 +8,18 @@
 <style>
   :root { --bg:#111418; --panel:#1a1f26; --text:#e6e8eb; --muted:#8b939e; --line:#2a313a; --accent:#3b82f6; }
   * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+  html, body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--text);
     font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
-  header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 8px; border-bottom:1px solid var(--line); }
   .grp { display:flex; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  .grp button { background:none; border:0; color:var(--muted); padding:6px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .grp button { background:none; border:0; color:var(--muted); padding:3px 9px; font-size:12px; cursor:pointer; font-family:inherit; }
   .grp button.on { background:var(--accent); color:#fff; }
-  .meta { margin-left:auto; font-size:12px; color:var(--muted); text-align:right; }
+  .meta { margin-left:auto; font-size:11px; color:var(--muted); text-align:right; }
   .legend { display:flex; align-items:center; gap:2px; font-size:11px; color:var(--muted); }
   .legend span.c { width:22px; height:12px; display:inline-block; }
-  .crumbs { position:absolute; top:48px; left:12px; font-size:12px; color:var(--muted); }
+  .crumbs { position:absolute; top:34px; left:8px; font-size:11px; color:var(--muted); }
   .crumbs a { color:var(--text); cursor:pointer; text-decoration:underline; }
-  #chart { position:absolute; top:70px; left:0; right:0; bottom:0; }
+  #chart { position:absolute; top:50px; left:0; right:0; bottom:0; }
   @media (max-width: 640px) { .crumbs { top:88px; } #chart { top:110px; } .meta { margin-left:0; text-align:left; width:100%; } }
 </style>
 </head>
@@ -187,13 +187,13 @@ function render() {
       return `<b>${d.name}</b><br>시가총액 가중 ${fmt(d.chg)}`;
     } },
     series: [{
-      id: "map", type: "treemap", roam: false, nodeClick: false, animationDurationUpdate: 1200, animationEasingUpdate: "cubicInOut", width: "100%", height: "100%", top: 22, bottom: 0, left: 0, right: 0,
+      id: "map", type: "treemap", roam: false, nodeClick: false, animationDurationUpdate: 1200, animationEasingUpdate: "cubicInOut", width: "100%", height: "100%", top: 0, bottom: 0, left: 0, right: 0,
       breadcrumb: { show: false },
       leafDepth: 3, visibleMin: 300,
-      upperLabel: { show: true, height: 18, color: "#e6e8eb", fontSize: 11,
+      upperLabel: { show: true, height: 15, color: "#e6e8eb", fontSize: 10,
         formatter: (p) => `${p.name}  ${fmt(p.data.chg)}` },
-      label: { show: true, color: "#fff", overflow: "truncate", lineHeight: 15,
-        formatter: (p) => `{n|${p.name}}\n${fmt(p.data.chg)}`, rich: { n: { fontWeight: "bold", fontSize: 12 } } },
+      label: { show: true, color: "#fff", overflow: "truncate", lineHeight: 13, fontSize: 10,
+        formatter: (p) => `{n|${p.name}}\n${fmt(p.data.chg)}`, rich: { n: { fontWeight: "bold", fontSize: 11 } } },
       itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 },
       levels: [
         { itemStyle: { borderWidth: 0, gapWidth: 3 } },
