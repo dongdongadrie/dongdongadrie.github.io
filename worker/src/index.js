@@ -14,12 +14,50 @@ function cors(origin) {
   };
 }
 
+// GET /us?syms=AAPL,NVDA,...  →  {"at": "...", "d": {"AAPL": [정규장 최근가, 등락률%, 장외 최근가], ...}}
+// Robinhood 공개 시세(키 불필요, 전 거래소 통합 체결가). 한 번에 200종목씩
+async function us(url, origin, ctx) {
+  const syms = (url.searchParams.get("syms") || "").split(",").filter(s => /^[A-Z][A-Z0-9.\-]{0,9}$/.test(s)).slice(0, 600);
+  if (!syms.length) return new Response("syms required", { status: 400, headers: cors(origin) });
+  const cacheKey = new Request("https://cache.local/us/" + syms.join(","));
+  const cache = caches.default;
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    const r = new Response(hit.body, hit);
+    Object.entries(cors(origin)).forEach(([k, v]) => r.headers.set(k, v));
+    return r;
+  }
+  const out = {};
+  for (let i = 0; i < syms.length; i += 200) {
+    const res = await fetch("https://api.robinhood.com/quotes/?symbols=" + syms.slice(i, i + 200).join(","), {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
+    });
+    if (!res.ok) return new Response("upstream " + res.status, { status: 502, headers: cors(origin) });
+    const j = await res.json();
+    for (const q of j.results || []) {
+      if (!q) continue;
+      const last = Number(q.last_trade_price), prev = Number(q.adjusted_previous_close || q.previous_close);
+      const ext = Number(q.last_extended_hours_trade_price || q.last_non_reg_trade_price || 0) || null;
+      if (last && prev) out[q.symbol] = [last, Math.round((last / prev - 1) * 10000) / 100, ext];
+    }
+  }
+  const body = JSON.stringify({ at: new Date().toISOString(), d: out });
+  const resp = new Response(body, {
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": `public, max-age=${CACHE_SEC}` },
+  });
+  ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+  const r = new Response(body, resp);
+  Object.entries(cors(origin)).forEach(([k, v]) => r.headers.set(k, v));
+  return r;
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const origin = req.headers.get("Origin") || "";
     if (req.method === "OPTIONS") return new Response(null, { headers: cors(origin) });
     if (origin && !ALLOWED.includes(origin)) return new Response("forbidden", { status: 403 });
+    if (url.pathname === "/us") return us(url, origin, ctx);
     if (url.pathname !== "/kr") return new Response("not found", { status: 404, headers: cors(origin) });
 
     const codes = (url.searchParams.get("codes") || "").split(",").filter(c => /^[0-9A-Z]{6}$/.test(c)).slice(0, 400);
