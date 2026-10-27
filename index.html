@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마켓맵</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+<style>
+  :root { --bg:#111418; --panel:#1a1f26; --text:#e6e8eb; --muted:#8b939e; --line:#2a313a; --accent:#3b82f6; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line); }
+  .grp { display:flex; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .grp button { background:none; border:0; color:var(--muted); padding:6px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .grp button.on { background:var(--accent); color:#fff; }
+  .meta { margin-left:auto; font-size:12px; color:var(--muted); text-align:right; }
+  .legend { display:flex; align-items:center; gap:2px; font-size:11px; color:var(--muted); }
+  .legend span.c { width:22px; height:12px; display:inline-block; }
+  #chart { position:absolute; top:52px; left:0; right:0; bottom:0; }
+  @media (max-width: 640px) { #chart { top:92px; } .meta { margin-left:0; text-align:left; width:100%; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="grp" id="mk">
+    <button data-v="us" class="on">미장</button>
+    <button data-v="kr">국장</button>
+  </div>
+  <div class="grp" id="pd">
+    <button data-v="1D" class="on">1일</button>
+    <button data-v="1W">1주</button>
+    <button data-v="1M">1개월</button>
+    <button data-v="YTD">연초 대비</button>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="meta" id="meta">불러오는 중</div>
+</header>
+<div id="chart"></div>
+<script>
+// 데이터: TradingView 스캐너(공식 공개 API 아님). 1분마다 다시 불러온다.
+const COL = { "1D": "change", "1W": "Perf.W", "1M": "Perf.1M", "YTD": "Perf.YTD" };
+const RANGE = { "1D": 3, "1W": 6, "1M": 12, "YTD": 30 };   // 색이 가장 진해지는 등락률(%)
+const LIMIT = { us: 500, kr: 300 };
+const SECTOR_KO = {
+  "Electronic Technology": "전자기술", "Technology Services": "기술서비스", "Finance": "금융",
+  "Health Technology": "헬스케어", "Retail Trade": "소매", "Consumer Non-Durables": "필수소비재",
+  "Consumer Durables": "내구소비재", "Producer Manufacturing": "산업재", "Energy Minerals": "에너지",
+  "Utilities": "유틸리티", "Communications": "통신", "Transportation": "운송", "Process Industries": "소재와 화학",
+  "Non-Energy Minerals": "철강과 금속", "Industrial Services": "산업서비스", "Commercial Services": "상업서비스",
+  "Health Services": "헬스케어 서비스", "Consumer Services": "소비자 서비스", "Distribution Services": "유통",
+  "Miscellaneous": "기타", "Government": "정부"
+};
+const IND_KO = {
+  "Semiconductors": "반도체", "Packaged Software": "소프트웨어", "Internet Software/Services": "인터넷 서비스",
+  "Telecommunications Equipment": "통신장비", "Electronic Production Equipment": "반도체 장비",
+  "Computer Processing Hardware": "컴퓨터 하드웨어", "Computer Peripherals": "컴퓨터 주변기기",
+  "Electronic Components": "전자부품", "Electrical Products": "전기장비", "Major Banks": "대형 은행",
+  "Regional Banks": "지역 은행", "Investment Banks/Brokers": "증권", "Life/Health Insurance": "생명보험",
+  "Property/Casualty Insurance": "손해보험", "Multi-Line Insurance": "종합보험", "Financial Conglomerates": "금융지주",
+  "Pharmaceuticals: Major": "대형 제약", "Pharmaceuticals: Other": "제약", "Biotechnology": "바이오",
+  "Medical Specialties": "의료기기", "Motor Vehicles": "자동차", "Auto Parts: OEM": "자동차 부품",
+  "Integrated Oil": "종합 석유", "Oil & Gas Production": "석유가스 생산", "Electric Utilities": "전력",
+  "Aerospace & Defense": "항공우주와 방산", "Industrial Machinery": "산업기계", "Trucks/Construction/Farm Machinery": "건설기계",
+  "Chemicals: Specialty": "특수화학", "Chemicals: Major Diversified": "종합화학", "Steel": "철강",
+  "Internet Retail": "온라인 소매", "Specialty Stores": "전문 소매", "Discount Stores": "할인점",
+  "Beverages: Non-Alcoholic": "음료", "Food: Major Diversified": "식품", "Household/Personal Care": "생활용품과 화장품",
+  "Cable/Satellite TV": "케이블TV", "Major Telecommunications": "통신사", "Wireless Telecommunications": "무선통신",
+  "Movies/Entertainment": "미디어와 엔터", "Restaurants": "외식", "Marine Shipping": "해운", "Airlines": "항공",
+  "Engineering & Construction": "건설", "Information Technology Services": "IT 서비스", "Data Processing Services": "데이터 처리",
+  "Finance/Rental/Leasing": "여신금융", "Real Estate Investment Trusts": "리츠", "Tobacco": "담배",
+  "Apparel/Footwear": "의류와 신발", "Electronics/Appliances": "가전", "Recreational Products": "레저용품",
+  "Building Products": "건축자재", "Industrial Conglomerates": "복합기업", "Railroads": "철도",
+  "Medical Distributors": "의약품 유통", "Managed Health Care": "건강보험", "Hospital/Nursing Management": "병원",
+  "Contract Drilling": "시추", "Oilfield Services/Equipment": "유전 서비스", "Gas Distributors": "가스",
+  "Alternative Power Generation": "신재생 발전", "Agricultural Commodities/Milling": "농산물",
+  "Containers/Packaging": "포장재", "Miscellaneous Commercial Services": "기타 서비스", "Advertising/Marketing Services": "광고"
+};
+let state = { mk: "us", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null } };
+const chart = echarts.init(document.getElementById("chart"), null, { renderer: "canvas" });
+
+function body(mk) {
+  const cols = ["name", "description", "sector", "industry", "market_cap_basic", "change", "Perf.W", "Perf.1M", "Perf.YTD", "close", "currency"];
+  const f = [{ left: "type", operation: "equal", right: "stock" }, { left: "is_primary", operation: "equal", right: true },
+             { left: "subtype", operation: "in_range", right: ["common", "foreign-issuer", ""] }];
+  if (mk === "us") f.push({ left: "exchange", operation: "in_range", right: ["NYSE", "NASDAQ", "AMEX"] });
+  return JSON.stringify({ columns: cols, filter: f, options: { lang: "ko" }, markets: [mk === "us" ? "america" : "korea"],
+    sort: { sortBy: "market_cap_basic", sortOrder: "desc" }, range: [0, LIMIT[mk]] });
+}
+
+async function load(mk) {
+  const url = `https://scanner.tradingview.com/${mk === "us" ? "america" : "korea"}/scan`;
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body: body(mk) });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json();
+  const seen = new Set();
+  const rows = [];
+  for (const x of j.data) {
+    const d = x.d;
+    let name = (mk === "kr" ? d[1] : d[0]) || d[0];
+    if (mk === "kr") {
+      name = name.replace(/보통주$/, "");
+      for (const [a, b] of [["에스케이", "SK"], ["엘지", "LG"], ["에이치디", "HD"], ["케이비", "KB"], ["엘에스", "LS"],
+                            ["씨제이", "CJ"], ["지에스", "GS"], ["케이티", "KT"], ["엔에이치", "NH"], ["디비", "DB"],
+                            ["비엔케이", "BNK"], ["에이치엘", "HL"], ["케이씨씨", "KCC"], ["에스디", "SD"]])
+        if (name.startsWith(a)) { name = b + name.slice(a.length); break; }
+    }
+    const key = mk === "us" ? (d[1] || "").replace(/ Class [A-C]$/i, "") : d[0];
+    if (seen.has(key)) continue;           // 알파벳 A/C 같은 중복 주식 제거
+    seen.add(key);
+    rows.push({ t: d[0], name, desc: d[1], sec: SECTOR_KO[d[2]] || d[2] || "기타", ind: IND_KO[d[3]] || d[3] || "기타",
+      cap: d[4] || 0, "1D": d[5], "1W": d[6], "1M": d[7], "YTD": d[8], close: d[9], cur: d[10] });
+  }
+  state.data[mk] = rows;
+  state.at[mk] = new Date();
+}
+
+function color(v, lim) {
+  // 한국식: 상승 빨강, 하락 파랑, 보합 회색
+  if (v == null || isNaN(v)) return "#3a3f47";
+  const t = Math.max(-1, Math.min(1, v / lim));
+  const mix = (a, b, k) => a.map((c, i) => Math.round(c + (b[i] - c) * k));
+  const grey = [58, 63, 71], red = [214, 40, 57], blue = [36, 99, 235];
+  const c = t >= 0 ? mix(grey, red, t) : mix(grey, blue, -t);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function fmt(v) { return v == null || isNaN(v) ? "-" : (v > 0 ? "+" : "") + v.toFixed(2) + "%"; }
+
+function tree(rows) {
+  const pd = state.pd, lim = RANGE[pd];
+  const secs = {};
+  for (const r of rows) {
+    const s = secs[r.sec] || (secs[r.sec] = {});
+    (s[r.ind] || (s[r.ind] = [])).push(r);
+  }
+  const wavg = (list) => { let w = 0, s = 0; for (const r of list) if (r[pd] != null) { w += r.cap; s += r.cap * r[pd]; } return w ? s / w : null; };
+  return Object.entries(secs).map(([sec, inds]) => {
+    const all = Object.values(inds).flat();
+    const sv = wavg(all);
+    return { name: sec, value: all.reduce((a, r) => a + r.cap, 0), chg: sv,
+      itemStyle: { color: color(sv, lim) },
+      children: Object.entries(inds).map(([ind, list]) => {
+        const iv = wavg(list);
+        return { name: ind, value: list.reduce((a, r) => a + r.cap, 0), chg: iv, itemStyle: { color: color(iv, lim) },
+          children: list.map(r => ({ name: r.name, value: r.cap, chg: r[pd], tk: r.t, desc: r.desc, close: r.close, cur: r.cur,
+            itemStyle: { color: color(r[pd], lim) } })) };
+      }) };
+  });
+}
+
+function legend() {
+  const lim = RANGE[state.pd], el = document.getElementById("legend");
+  const steps = [-1, -0.66, -0.33, 0, 0.33, 0.66, 1];
+  el.innerHTML = `<span>${-lim}%</span>` + steps.map(s => `<span class="c" style="background:${color(s * lim, lim)}"></span>`).join("") + `<span>+${lim}%</span>`;
+}
+
+function render() {
+  const rows = state.data[state.mk];
+  if (!rows) return;
+  legend();
+  const at = state.at[state.mk];
+  document.getElementById("meta").textContent =
+    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 갱신`;
+  chart.setOption({
+    tooltip: { formatter: (p) => {
+      const d = p.data;
+      if (d.tk) return `<b>${d.name}</b> (${d.tk})<br>${d.desc || ""}<br>${fmt(d.chg)}<br>현재가 ${d.close?.toLocaleString()} ${d.cur || ""}`;
+      return `<b>${d.name}</b><br>시가총액 가중 ${fmt(d.chg)}`;
+    } },
+    series: [{
+      type: "treemap", roam: false, nodeClick: "zoomToNode", width: "100%", height: "100%", top: 22, bottom: 0, left: 0, right: 0,
+      breadcrumb: { show: true, top: 0, left: 4, height: 20, itemStyle: { color: "#1a1f26", borderColor: "#2a313a", textStyle: { color: "#e6e8eb" } } },
+      leafDepth: 3, visibleMin: 300,
+      upperLabel: { show: true, height: 18, color: "#e6e8eb", fontSize: 11,
+        formatter: (p) => `${p.name}  ${fmt(p.data.chg)}` },
+      label: { show: true, color: "#fff", overflow: "truncate", lineHeight: 15,
+        formatter: (p) => `{n|${p.name}}\n${fmt(p.data.chg)}`, rich: { n: { fontWeight: "bold", fontSize: 12 } } },
+      itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 },
+      levels: [
+        { itemStyle: { borderWidth: 0, gapWidth: 3 } },
+        { itemStyle: { borderColor: "#111418", borderWidth: 2, gapWidth: 2 }, upperLabel: { show: true } },
+        { itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 }, upperLabel: { show: true, fontSize: 10 } },
+        { itemStyle: { borderWidth: 0.5, gapWidth: 0 } }
+      ],
+      data: tree(rows)
+    }]
+  }, true);
+}
+
+async function refresh(mk) {
+  try { await load(mk); if (mk === state.mk) render(); }
+  catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 1분 뒤 다시 시도: " + e.message; }
+}
+
+document.querySelectorAll("#mk button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#mk button").forEach(x => x.classList.toggle("on", x === b));
+  state.mk = b.dataset.v; state.data[state.mk] ? render() : refresh(state.mk);
+});
+document.querySelectorAll("#pd button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#pd button").forEach(x => x.classList.toggle("on", x === b));
+  state.pd = b.dataset.v; render();
+});
+const q = new URLSearchParams(location.search);
+if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
+window.addEventListener("resize", () => chart.resize());
+refresh(state.mk);
+setInterval(() => refresh(state.mk), 60000);
+</script>
+</body>
+</html>
