@@ -264,7 +264,7 @@ async function loadRT(mk) {
 }
 
 async function refresh(mk) {
-  try { await load(mk); if (QUOTE_API && !state.rtAt[mk]) await loadRT(mk); if (mk === state.mk) render(); }
+  try { await load(mk); if (QUOTE_API) await loadRT(mk); if (mk === state.mk) render(); }
   catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 잠시 뒤 다시 시도: " + e.message; }
 }
 
@@ -280,14 +280,9 @@ const q = new URLSearchParams(location.search);
 if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
 window.addEventListener("resize", () => chart.resize());
 refresh(state.mk);
-// 실시간 중계가 있으면 5초마다 가격만 받고, 종목 구성과 기간 수익률은 5분마다 TradingView 에서 다시 받는다.
-// 중계가 없으면 15초마다 TradingView(미국 15분, 한국 20분 지연)만 쓴다
-if (QUOTE_API) {
-  setInterval(() => loadRT(state.mk), 5000);
-  setInterval(() => refresh(state.mk), 300000);
-} else {
-  setInterval(() => refresh(state.mk), 15000);
-}
+// 5초마다 전부 다시 받는다(사용자 결정): TradingView 로 종목 구성, 시가총액, 기간 수익률을 받고
+// 실시간 중계가 있으면 가격과 1일 등락률을 실시간 값으로 덮어쓴다
+setInterval(() => refresh(state.mk), 5000);
 </script>
 </body>
 </html>
