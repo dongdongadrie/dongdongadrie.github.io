@@ -79,7 +79,9 @@ const IND_KO = {
   "Alternative Power Generation": "신재생 발전", "Agricultural Commodities/Milling": "농산물",
   "Containers/Packaging": "포장재", "Miscellaneous Commercial Services": "기타 서비스", "Advertising/Marketing Services": "광고"
 };
-let state = { mk: "us", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null } };
+// 국장 실시간 시세 중계(Cloudflare Worker). 비어 있으면 국장도 TradingView 지연 시세만 쓴다
+const QUOTE_API = new URLSearchParams(location.search).get("api") || "";  // 배포 주소가 정해지면 기본값으로 넣는다
+let state = { mk: "us", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null }, rt: {}, rtAt: null };
 const chart = echarts.init(document.getElementById("chart"), null, { renderer: "canvas" });
 
 function body(mk) {
@@ -115,6 +117,7 @@ async function load(mk) {
       cap: d[4] || 0, "1D": d[5], "1W": d[6], "1M": d[7], "YTD": d[8], close: d[9], cur: d[10] });
   }
   state.data[mk] = rows;
+  if (mk === "kr") applyRealtime();
   state.at[mk] = new Date();
 }
 
@@ -166,9 +169,10 @@ function render() {
   if (!rows) return;
   legend();
   const key = state.mk + state.pd;
-  const at = state.at[state.mk];
+  const live = state.mk === "kr" && state.rtAt;
+  const at = live ? state.rtAt : state.at[state.mk];
   document.getElementById("meta").textContent =
-    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 갱신 (${state.mk === "us" ? "15" : "20"}분 지연 시세)`;
+    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 갱신 (${live ? "실시간 시세" : (state.mk === "us" ? "15분 지연 시세" : "20분 지연 시세")})`;
   if (drawn === key) {
     // 같은 화면이면 데이터만 바꾼다. 칸 색과 크기가 애니메이션으로 이어진다
     chart.setOption({ series: [{ id: "map", data: view(rows) }] });
@@ -236,8 +240,30 @@ chart.on("click", (p) => {
   update();
 });
 
+function applyRealtime() {
+  // 국장 1일 등락률과 현재가를 실시간 값으로 덮어쓴다(1주, 1개월, 연초 대비는 TradingView 값 유지)
+  for (const r of state.data.kr || []) {
+    const q = state.rt[r.t];
+    if (q) { r.close = q[0]; r["1D"] = q[1]; }
+  }
+}
+
+async function loadRT() {
+  const rows = state.data.kr;
+  if (!QUOTE_API || !rows) return;
+  try {
+    const r = await fetch(QUOTE_API + "/kr?codes=" + rows.map(x => x.t).join(","));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    state.rt = j.d || {};
+    state.rtAt = new Date();
+    applyRealtime();
+    if (state.mk === "kr") render();
+  } catch (e) { state.rtAt = null; }
+}
+
 async function refresh(mk) {
-  try { await load(mk); if (mk === state.mk) render(); }
+  try { await load(mk); if (mk === "kr" && QUOTE_API && !state.rtAt) await loadRT(); if (mk === state.mk) render(); }
   catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 잠시 뒤 다시 시도: " + e.message; }
 }
 
@@ -253,7 +279,10 @@ const q = new URLSearchParams(location.search);
 if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
 window.addEventListener("resize", () => chart.resize());
 refresh(state.mk);
-setInterval(() => refresh(state.mk), 15000);  // 15초마다. 원천 시세 자체가 15~20분 지연
+// 미장: 15초마다 TradingView(15분 지연). 국장: 실시간 중계가 있으면 5초마다 가격만, 종목 구성은 5분마다
+setInterval(() => { if (state.mk === "us") refresh("us"); }, 15000);
+setInterval(() => { if (state.mk === "kr") (QUOTE_API ? loadRT() : refresh("kr")); }, QUOTE_API ? 5000 : 15000);
+setInterval(() => { if (state.mk === "kr" && QUOTE_API) refresh("kr"); }, 300000);
 </script>
 </body>
 </html>
