@@ -20,6 +20,14 @@
   .crumbs { position:absolute; top:34px; left:8px; font-size:11px; color:var(--muted); }
   .crumbs a { color:var(--text); cursor:pointer; text-decoration:underline; }
   #chart { position:absolute; top:50px; left:0; right:0; bottom:0; }
+  /* 캡처용(?shot=1): 버튼 줄 대신 흰 제목 띠(검정 글씨), 글씨 한 단계 크게 */
+  #band { display:none; }
+  body.shot header, body.shot .crumbs { display:none; }
+  body.shot #band { display:flex; align-items:center; gap:16px; height:44px; padding:0 14px; background:#fff; color:#000; }
+  body.shot #band .t { font-size:20px; font-weight:700; }
+  body.shot #band .legend { color:#000; margin-left:auto; font-size:13px; }
+  body.shot #band .b { font-size:13px; }
+  body.shot #chart { top:44px !important; }
   @media (max-width: 640px) { .meta { margin-left:0; text-align:left; width:100%; } }
 </style>
 </head>
@@ -38,6 +46,7 @@
   <div class="legend" id="legend"></div>
   <div class="meta" id="meta">불러오는 중</div>
 </header>
+<div id="band"><span class="t" id="bandTitle"></span><span class="b" id="bandBasis"></span><span class="legend" id="bandLegend"></span></div>
 <div id="crumbs" class="crumbs"></div>
 <div id="chart"></div>
 <script>
@@ -77,10 +86,22 @@ const IND_KO = {
   "Medical Distributors": "의약품 유통", "Managed Health Care": "건강보험", "Hospital/Nursing Management": "병원",
   "Contract Drilling": "시추", "Oilfield Services/Equipment": "유전 서비스", "Gas Distributors": "가스",
   "Alternative Power Generation": "신재생 발전", "Agricultural Commodities/Milling": "농산물",
-  "Containers/Packaging": "포장재", "Miscellaneous Commercial Services": "기타 서비스", "Advertising/Marketing Services": "광고"
+  "Containers/Packaging": "포장재",
+  "Investment Managers": "자산운용", "Specialty Telecommunications": "특수통신", "Hotels/Resorts/Cruise lines": "호텔과 크루즈",
+  "Insurance Brokers/Services": "보험중개", "Food: Specialty/Candy": "특수식품", "Home Improvement Chains": "주택용품 소매",
+  "Apparel/Footwear Retail": "의류 소매", "Drugstore Chains": "드럭스토어", "Oil Refining/Marketing": "정유",
+  "Oil & Gas Pipelines": "파이프라인", "Electronic Equipment/Instruments": "전자장비", "Air Freight/Couriers": "항공화물과 택배",
+  "Other Metals/Minerals": "기타 금속", "Precious Metals": "귀금속", "Environmental Services": "환경 서비스",
+  "Wholesale Distributors": "도매", "Financial Publishing/Services": "금융정보 서비스", "Construction Materials": "건자재", "Miscellaneous Commercial Services": "기타 서비스", "Advertising/Marketing Services": "광고"
 };
 // 국장 실시간 시세 중계(Cloudflare Worker). 비어 있으면 국장도 TradingView 지연 시세만 쓴다
-const QUOTE_API = new URLSearchParams(location.search).get("api") || "https://market-map-quotes.dongdongadrie.workers.dev";
+// ?close=1 (또는 캡처용 ?shot=1): 실시간 중계를 끄고 TradingView 정규장 값만 쓴다.
+// 장 마감 뒤 네이버 실시간은 시간외·NXT 애프터마켓 가격을 보여 줘서 종가 기준 등락률이 틀어진다.
+// TradingView 의 change 는 정규장 종가 기준(한국 KRX 정규장 종가, 미국 정규장 종가)이다(2026-10-30 확인)
+const P = new URLSearchParams(location.search);
+const SHOT = P.get("shot") === "1";
+const CLOSE = SHOT || P.get("close") === "1";
+const QUOTE_API = CLOSE ? "" : (P.get("api") || "https://market-map-quotes.dongdongadrie.workers.dev");
 let state = { mk: "us", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null }, rt: { us: {}, kr: {} }, rtAt: { us: null, kr: null } };
 const chart = echarts.init(document.getElementById("chart"), null, { renderer: "canvas" });
 
@@ -172,7 +193,12 @@ function render() {
   const live = state.rtAt[state.mk];
   const at = live || state.at[state.mk];
   document.getElementById("meta").textContent =
-    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 갱신 (${live ? "실시간 시세" : (state.mk === "us" ? "15분 지연 시세" : "20분 지연 시세")})`;
+    `${state.mk === "us" ? "미국 시가총액 상위" : "한국 시가총액 상위"} ${rows.length}종목, ${at.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} 갱신 (${live ? "실시간 시세" : CLOSE ? "정규장 종가 기준" : (state.mk === "us" ? "15분 지연 시세" : "20분 지연 시세")})`;
+  if (SHOT) {
+    document.getElementById("bandTitle").textContent = P.get("title") || (state.mk === "us" ? "미국 마켓맵" : "국내 마켓맵");
+    document.getElementById("bandBasis").textContent = `시가총액 상위 ${rows.length}종목, ${{ "1D": "1일", "1W": "1주", "1M": "1개월", "YTD": "연초 대비" }[state.pd]} 등락률`;
+    document.getElementById("bandLegend").innerHTML = document.getElementById("legend").innerHTML;
+  }
   if (drawn === key) {
     // 같은 화면이면 데이터만 바꾼다. 칸 색과 크기가 애니메이션으로 이어진다
     chart.setOption({ series: [{ id: "map", data: view(rows) }] });
@@ -190,21 +216,22 @@ function render() {
       id: "map", type: "treemap", roam: false, nodeClick: false, animationDurationUpdate: 1200, animationEasingUpdate: "cubicInOut", width: "100%", height: "100%", top: 0, bottom: 0, left: 0, right: 0,
       breadcrumb: { show: false },
       leafDepth: 3, visibleMin: 300,
-      upperLabel: { show: true, height: 15, color: "#e6e8eb", fontSize: 10,
+      upperLabel: { show: true, height: SHOT ? 18 : 15, color: "#e6e8eb", fontSize: SHOT ? 12 : 10,
         formatter: (p) => `${p.name}  ${fmt(p.data.chg)}` },
-      label: { show: true, color: "#fff", overflow: "truncate", lineHeight: 13, fontSize: 10,
-        formatter: (p) => `{n|${p.name}}\n${fmt(p.data.chg)}`, rich: { n: { fontWeight: "bold", fontSize: 11 } } },
+      label: { show: true, color: "#fff", overflow: "truncate", lineHeight: SHOT ? 16 : 13, fontSize: SHOT ? 12 : 10,
+        formatter: (p) => `{n|${p.name}}\n${fmt(p.data.chg)}`, rich: { n: { fontWeight: "bold", fontSize: SHOT ? 13 : 11 } } },
       itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 },
       levels: [
-        { itemStyle: { borderWidth: 0, gapWidth: 3 } },
+        { itemStyle: { borderWidth: 0, gapWidth: 3 }, upperLabel: { show: false } },
         { itemStyle: { borderColor: "#111418", borderWidth: 2, gapWidth: 2 }, upperLabel: { show: true } },
-        { itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 }, upperLabel: { show: true, fontSize: 10 } },
+        { itemStyle: { borderColor: "#111418", borderWidth: 1, gapWidth: 1 }, upperLabel: { show: true, fontSize: SHOT ? 11 : 10 } },
         { itemStyle: { borderWidth: 0.5, gapWidth: 0 } }
       ],
       data: view(rows)
     }]
   }, true);
   crumbs();
+  if (SHOT) chart.on("finished", () => { document.body.dataset.ready = "1"; });
 }
 
 function view(rows) {
@@ -276,10 +303,16 @@ document.querySelectorAll("#pd button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#pd button").forEach(x => x.classList.toggle("on", x === b));
   state.pd = b.dataset.v; render();
 });
-const q = new URLSearchParams(location.search);
+const q = P;
+if (SHOT) document.body.classList.add("shot");
+if (COL[q.get("pd")]) {
+  state.pd = q.get("pd");
+  document.querySelectorAll("#pd button").forEach(b => b.classList.toggle("on", b.dataset.v === state.pd));
+}
 if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
 function layout() {
   // 버튼 줄이 창 너비에 따라 한 줄 또는 두 줄이 되므로, 그 높이에 맞춰 지도를 붙인다. 스크롤 없이 창 안에 꽉 차게
+  if (SHOT) { chart.resize(); return; }
   const h = document.querySelector("header").offsetHeight;
   document.getElementById("crumbs").style.top = h + 2 + "px";
   document.getElementById("chart").style.top = h + 18 + "px";
@@ -290,7 +323,8 @@ layout();
 refresh(state.mk);
 // 5초마다 전부 다시 받는다(사용자 결정): TradingView 로 종목 구성, 시가총액, 기간 수익률을 받고
 // 실시간 중계가 있으면 가격과 1일 등락률을 실시간 값으로 덮어쓴다
-setInterval(() => refresh(state.mk), 5000);
+// 캡처용은 한 번만 그린다(갱신 애니메이션 중에 찍히지 않게)
+if (!SHOT) setInterval(() => refresh(state.mk), 5000);
 </script>
 </body>
 </html>
