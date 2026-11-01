@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clock</title>
+<style>
+  :root { --bg: #ffffff; --fg: #37352f; --sub: #787774; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #191919; --fg: #ffffffcf; --sub: #9b9a97; }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--fg); user-select: none; overflow: hidden;
+  }
+  #time {
+    font-size: min(30vw, 62vh); font-weight: 600; line-height: 1;
+    letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  }
+  #colon { animation: blink 2s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  #date { margin-top: 0.6em; font-size: min(6vw, 13vh); color: var(--sub); }
+</style>
+</head>
+<body>
+  <div id="time"><span id="hh">--</span><span id="colon">:</span><span id="mm">--</span></div>
+  <div id="date"></div>
+<script>
+  // 서울 시각으로 HH:MM 과 날짜를 보여 준다. 노션 임베드용 (2026-11-01)
+  const p = new URLSearchParams(location.search);
+  const tz = p.get("tz") || "Asia/Seoul";
+  const WD = ["일", "월", "화", "수", "목", "금", "토"];
+  function tick() {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      month: "numeric", day: "numeric", weekday: "short"
+    }).formatToParts(new Date()).map(x => [x.type, x.value]));
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(new Date());
+    const idx = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(wd);
+    document.getElementById("hh").textContent = parts.hour;
+    document.getElementById("mm").textContent = parts.minute;
+    document.getElementById("date").textContent = `${parts.month}월 ${parts.day}일 (${WD[idx]})`;
+  }
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
