@@ -34,8 +34,8 @@
 <body>
 <header>
   <div class="grp" id="mk">
-    <button data-v="us" class="on">미장</button>
-    <button data-v="kr">국장</button>
+    <button data-v="kr" class="on">국장</button>
+    <button data-v="us">미장</button>
   </div>
   <div class="grp" id="pd">
     <button data-v="1D" class="on">1일</button>
@@ -102,7 +102,7 @@ const P = new URLSearchParams(location.search);
 const SHOT = P.get("shot") === "1";
 const CLOSE = SHOT || P.get("close") === "1";
 const QUOTE_API = CLOSE ? "" : (P.get("api") || "https://market-map-quotes.dongdongadrie.workers.dev");
-let state = { mk: "us", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null }, rt: { us: {}, kr: {} }, rtAt: { us: null, kr: null } };
+let state = { mk: "kr", pd: "1D", data: { us: null, kr: null }, at: { us: null, kr: null }, rt: { us: {}, kr: {} }, rtAt: { us: null, kr: null } };
 const chart = echarts.init(document.getElementById("chart"), null, { renderer: "canvas" });
 
 function body(mk) {
@@ -295,10 +295,22 @@ async function refresh(mk) {
   catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 잠시 뒤 다시 시도: " + e.message; }
 }
 
-document.querySelectorAll("#mk button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("#mk button").forEach(x => x.classList.toggle("on", x === b));
-  state.mk = b.dataset.v; path = []; state.data[state.mk] ? render() : refresh(state.mk);
-});
+// 시간대별 기본 탭(한국 시간): 평일 07:00~17:00 은 국장, 그 밖(미국 장 시간대 포함)은 미장.
+// 토요일 07:00 전은 금요일 미국 장 마감 직후라 미장. 탭을 직접 누르거나 ?mk= 를 주면 자동 전환을 멈춘다
+function autoMk() {
+  const k = new Date(Date.now() + 9 * 3600e3);              // UTC 기준으로 KST 시각 계산
+  const day = k.getUTCDay(), hm = k.getUTCHours() * 60 + k.getUTCMinutes();
+  if (day >= 1 && day <= 5) return hm >= 7 * 60 && hm < 17 * 60 ? "kr" : "us";
+  if (day === 6 && hm < 7 * 60) return "us";
+  return "kr";
+}
+let manual = false;
+function selectMk(v) {
+  document.querySelectorAll("#mk button").forEach(x => x.classList.toggle("on", x.dataset.v === v));
+  if (state.mk === v) return;
+  state.mk = v; path = []; state.data[state.mk] ? render() : refresh(state.mk);
+}
+document.querySelectorAll("#mk button").forEach(b => b.onclick = () => { manual = true; selectMk(b.dataset.v); });
 document.querySelectorAll("#pd button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#pd button").forEach(x => x.classList.toggle("on", x === b));
   state.pd = b.dataset.v; render();
@@ -309,7 +321,10 @@ if (COL[q.get("pd")]) {
   state.pd = q.get("pd");
   document.querySelectorAll("#pd button").forEach(b => b.classList.toggle("on", b.dataset.v === state.pd));
 }
-if (q.get("mk") === "kr") document.querySelector('#mk button[data-v="kr"]').click();
+if (q.get("mk") === "kr" || q.get("mk") === "us") { manual = true; selectMk(q.get("mk")); }
+else selectMk(autoMk());
+// 자동 모드면 1분마다 시간대를 다시 보고 장이 바뀌면 탭을 넘긴다
+if (!SHOT) setInterval(() => { if (!manual) selectMk(autoMk()); }, 60000);
 function layout() {
   // 버튼 줄이 창 너비에 따라 한 줄 또는 두 줄이 되므로, 그 높이에 맞춰 지도를 붙인다. 스크롤 없이 창 안에 꽉 차게
   if (SHOT) { chart.resize(); return; }
