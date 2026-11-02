@@ -295,14 +295,30 @@ async function refresh(mk) {
   catch (e) { document.getElementById("meta").textContent = "불러오기 실패, 잠시 뒤 다시 시도: " + e.message; }
 }
 
-// 시간대별 기본 탭(한국 시간): 평일 07:00~17:00 은 국장, 그 밖(미국 장 시간대 포함)은 미장.
-// 토요일 07:00 전은 금요일 미국 장 마감 직후라 미장. 탭을 직접 누르거나 ?mk= 를 주면 자동 전환을 멈춘다
-function autoMk() {
-  const k = new Date(Date.now() + 9 * 3600e3);              // UTC 기준으로 KST 시각 계산
-  const day = k.getUTCDay(), hm = k.getUTCHours() * 60 + k.getUTCMinutes();
-  if (day >= 1 && day <= 5) return hm >= 7 * 60 && hm < 17 * 60 ? "kr" : "us";
-  if (day === 6 && hm < 7 * 60) return "us";
-  return "kr";
+// 시간대별 기본 탭: 가장 최근에 정규장이 열린 시장을 보여준다.
+// 국장 정규장 09:00~15:30(KST), 미장 정규장 09:30~16:00(뉴욕 시간, 서머타임 자동 반영).
+// 두 장 사이 빈 시간과 주말에는 직전에 열렸던 장을 그대로 둔다. 탭을 직접 누르거나 ?mk= 를 주면 자동 전환을 멈춘다
+function nyIsDST(ms) {
+  return /EDT/.test(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "short" }).format(new Date(ms)));
+}
+function autoMk(now = Date.now()) {
+  let last = { t: -Infinity, mk: "kr" };
+  for (let i = 0; i <= 5; i++) {
+    const d = new Date(now + 9 * 3600e3 - i * 86400e3);            // KST 날짜
+    const y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate(), wd = d.getUTCDay();
+    if (wd >= 1 && wd <= 5) {
+      const kr = Date.UTC(y, m, day, 0, 0);                         // 09:00 KST
+      if (kr <= now && kr > last.t) last = { t: kr, mk: "kr" };
+    }
+    // 같은 날짜의 뉴욕 개장(뉴욕 평일). 09:30 뉴욕 = 14:30 UTC(EST, 한국 23:30) 또는 13:30 UTC(EDT, 한국 22:30)
+    const nd = new Date(Date.UTC(y, m, day)), nwd = nd.getUTCDay();
+    if (nwd >= 1 && nwd <= 5) {
+      const base = Date.UTC(nd.getUTCFullYear(), nd.getUTCMonth(), nd.getUTCDate(), 14, 30);
+      const us = nyIsDST(base) ? base - 3600e3 : base;
+      if (us <= now && us > last.t) last = { t: us, mk: "us" };
+    }
+  }
+  return last.mk;
 }
 let manual = false;
 function selectMk(v) {
