@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pomodoro</title>
+<style>
+  /* 노션 임베드용 뽀모도로 타이머 (2026-11-02). clock.html 과 같은 노션 색 */
+  :root { --bg: #ffffff; --fg: #37352f; --sub: #787774; --line: #e9e9e7; --focus: #c4554d; --rest: #448361; --btn: #f1f1ef; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #191919; --fg: #ffffffcf; --sub: #9b9a97; --line: #2f2f2f; --focus: #df5452; --rest: #4dab9a; --btn: #2f2f2f; }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--fg); user-select: none; overflow: hidden;
+  }
+  #mode { font-size: min(4.5vw, 7vh); font-weight: 600; letter-spacing: .02em; }
+  #mode.focus { color: var(--focus); } #mode.rest { color: var(--rest); }
+  #time { font-size: min(22vw, 34vh); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  #bar { width: min(70vw, 520px); height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  #fill { height: 100%; width: 0; background: var(--focus); transition: width .5s linear; }
+  #count { font-size: min(3.4vw, 5vh); color: var(--sub); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  button {
+    font: inherit; font-size: min(3.4vw, 5vh); color: var(--fg); background: var(--btn);
+    border: 1px solid var(--line); border-radius: 6px; padding: .35em .9em; cursor: pointer;
+  }
+  button.on { outline: 2px solid var(--focus); }
+</style>
+</head>
+<body>
+  <div id="mode" class="focus">집중</div>
+  <div id="time">25:00</div>
+  <div id="bar"><div id="fill"></div></div>
+  <div class="row">
+    <button id="go">시작</button>
+    <button id="reset">리셋</button>
+    <button id="skip">다음 단계</button>
+  </div>
+  <div class="row" id="presets">
+    <button data-m="25" class="on">25분</button>
+    <button data-m="50">50분</button>
+    <button data-m="15">15분</button>
+    <button data-m="5">5분</button>
+  </div>
+  <div id="count">오늘 완료 0 뽀모도로</div>
+<script>
+  // 집중 25분 → 휴식 5분을 반복하고 4번째 집중 뒤에는 긴 휴식 30분. 끝나면 알림음.
+  // 남은 시간은 종료 시각 기준으로 계산해 탭이 백그라운드여도 어긋나지 않는다.
+  // 오늘 완료 횟수는 이 브라우저에만 저장된다(localStorage, 실패해도 동작).
+  const $ = id => document.getElementById(id);
+  let focusMin = 25, phase = "focus", endAt = null, remain = focusMin * 60, total = remain, timer = null;
+  const today = new Date().toISOString().slice(0, 10);
+  let done = 0;
+  try { const s = JSON.parse(localStorage.getItem("pomo") || "{}"); if (s.d === today) done = s.n || 0; } catch (e) {}
+  const save = () => { try { localStorage.setItem("pomo", JSON.stringify({ d: today, n: done })); } catch (e) {} };
+  const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  function beep() {
+    try {
+      const a = new (window.AudioContext || window.webkitAudioContext)();
+      [0, .35, .7].forEach(t => {
+        const o = a.createOscillator(), g = a.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(a.destination);
+        g.gain.setValueAtTime(.2, a.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + t + .3);
+        o.start(a.currentTime + t); o.stop(a.currentTime + t + .3);
+      });
+    } catch (e) {}
+  }
+  function draw() {
+    $("time").textContent = fmt(Math.max(0, Math.ceil(remain)));
+    const lbl = phase === "focus" ? "집중" : phase === "long" ? "긴 휴식" : "휴식";
+    $("mode").textContent = lbl; $("mode").className = phase === "focus" ? "focus" : "rest";
+    $("fill").style.width = `${100 * (1 - remain / total)}%`;
+    $("fill").style.background = phase === "focus" ? "var(--focus)" : "var(--rest)";
+    $("count").textContent = `오늘 완료 ${done} 뽀모도로`;
+    $("go").textContent = timer ? "일시정지" : "시작";
+    document.title = `${fmt(Math.max(0, Math.ceil(remain)))} ${lbl}`;
+  }
+  function setPhase(p) {
+    phase = p;
+    total = remain = (p === "focus" ? focusMin : p === "long" ? 30 : 5) * 60;
+    stop(); draw();
+  }
+  function next() {
+    if (phase === "focus") { done++; save(); setPhase(done % 4 === 0 ? "long" : "short"); }
+    else setPhase("focus");
+  }
+  function tick() {
+    remain = (endAt - Date.now()) / 1000;
+    if (remain <= 0) { remain = 0; beep(); next(); start(); return; }
+    draw();
+  }
+  function start() { endAt = Date.now() + remain * 1000; clearInterval(timer); timer = setInterval(tick, 250); draw(); }
+  function stop() { clearInterval(timer); timer = null; }
+  $("go").onclick = () => { if (timer) { remain = (endAt - Date.now()) / 1000; stop(); draw(); } else start(); };
+  $("reset").onclick = () => setPhase(phase);
+  $("skip").onclick = () => next();
+  document.querySelectorAll("#presets button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#presets button").forEach(x => x.classList.toggle("on", x === b));
+    focusMin = +b.dataset.m; setPhase("focus");
+  });
+  draw();
+</script>
+</body>
+</html>
