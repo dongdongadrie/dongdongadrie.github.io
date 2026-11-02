@@ -5,58 +5,94 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pomodoro</title>
 <style>
-  /* 노션 임베드용 뽀모도로 타이머 (2026-11-02). clock.html 과 같은 노션 색 */
-  :root { --bg: #ffffff; --fg: #37352f; --sub: #787774; --line: #e9e9e7; --focus: #c4554d; --rest: #448361; --btn: #f1f1ef; }
+  /* 노션 임베드용 뽀모도로 타이머 (2026-11-02). 남은 시간을 원형 부채꼴로 보여주는 타임 타이머 방식 */
+  :root { --bg: #ffffff; --fg: #37352f; --sub: #787774; --line: #e9e9e7; --focus: #d44c47; --rest: #448361; --btn: #f1f1ef; --face: #f7f6f3; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #191919; --fg: #ffffffcf; --sub: #9b9a97; --line: #2f2f2f; --focus: #df5452; --rest: #4dab9a; --btn: #2f2f2f; }
+    :root { --bg: #191919; --fg: #ffffffcf; --sub: #9b9a97; --line: #373737; --focus: #df5452; --rest: #4dab9a; --btn: #2a2a2a; --face: #202020; }
   }
   html, body { margin: 0; height: 100%; background: var(--bg); }
   body {
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh;
+    display: flex; align-items: center; justify-content: center; gap: 4vw;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     color: var(--fg); user-select: none; overflow: hidden;
   }
-  #mode { font-size: min(4.5vw, 7vh); font-weight: 600; letter-spacing: .02em; }
-  #mode.focus { color: var(--focus); } #mode.rest { color: var(--rest); }
-  #time { font-size: min(22vw, 34vh); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  #bar { width: min(70vw, 520px); height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-  #fill { height: 100%; width: 0; background: var(--focus); transition: width .5s linear; }
-  #count { font-size: min(3.4vw, 5vh); color: var(--sub); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #dial { height: min(88vh, 60vw); aspect-ratio: 1; }
+  svg { width: 100%; height: 100%; display: block; }
+  .side { display: flex; flex-direction: column; gap: 1.6vh; align-items: flex-start; }
+  #mode { font-size: min(7vh, 4.6vw); font-weight: 700; }
+  #time { font-size: min(17vh, 11vw); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  #count { font-size: min(5vh, 3.2vw); color: var(--sub); }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
   button {
-    font: inherit; font-size: min(3.4vw, 5vh); color: var(--fg); background: var(--btn);
-    border: 1px solid var(--line); border-radius: 6px; padding: .35em .9em; cursor: pointer;
+    font: inherit; font-size: min(5vh, 3.2vw); color: var(--fg); background: var(--btn);
+    border: 1px solid var(--line); border-radius: 6px; padding: .3em .75em; cursor: pointer;
   }
-  button.on { outline: 2px solid var(--focus); }
+  button.on { border-color: var(--focus); color: var(--focus); }
+  #go { background: var(--focus); color: #fff; border-color: var(--focus); }
+  @media (max-aspect-ratio: 1/1) {          /* 세로로 긴 칸이면 위아래 배치 */
+    body { flex-direction: column; gap: 2vh; }
+    #dial { height: auto; width: min(70vw, 55vh); }
+    .side { align-items: center; }
+    #mode { font-size: 6vw; } #time { font-size: 14vw; } button, #count { font-size: 4vw; }
+  }
 </style>
 </head>
 <body>
-  <div id="mode" class="focus">집중</div>
-  <div id="time">25:00</div>
-  <div id="bar"><div id="fill"></div></div>
-  <div class="row">
-    <button id="go">시작</button>
-    <button id="reset">리셋</button>
-    <button id="skip">다음 단계</button>
+  <div id="dial">
+    <svg viewBox="-110 -110 220 220" aria-label="남은 시간">
+      <circle r="100" fill="var(--face)" stroke="var(--line)" stroke-width="2"/>
+      <g id="ticks"></g>
+      <path id="wedge" fill="var(--focus)" opacity=".9"/>
+      <circle r="9" fill="var(--fg)"/>
+    </svg>
   </div>
-  <div class="row" id="presets">
-    <button data-m="25" class="on">25분</button>
-    <button data-m="50">50분</button>
-    <button data-m="15">15분</button>
-    <button data-m="5">5분</button>
+  <div class="side">
+    <div id="mode">집중</div>
+    <div id="time">25:00</div>
+    <div class="row">
+      <button id="go">시작</button>
+      <button id="reset">리셋</button>
+      <button id="skip">다음</button>
+    </div>
+    <div class="row" id="presets">
+      <button data-m="25" class="on">25분</button>
+      <button data-m="50">50분</button>
+      <button data-m="15">15분</button>
+    </div>
+    <div id="count">오늘 0 뽀모도로</div>
   </div>
-  <div id="count">오늘 완료 0 뽀모도로</div>
 <script>
-  // 집중 25분 → 휴식 5분을 반복하고 4번째 집중 뒤에는 긴 휴식 30분. 끝나면 알림음.
-  // 남은 시간은 종료 시각 기준으로 계산해 탭이 백그라운드여도 어긋나지 않는다.
-  // 오늘 완료 횟수는 이 브라우저에만 저장된다(localStorage, 실패해도 동작).
+  // 집중 → 휴식 5분 반복, 4번째 집중 뒤 긴 휴식 30분. 끝나면 알림음.
+  // 부채꼴은 60분 눈금판 위에 남은 시간만큼 그린다(25분이면 시계 방향 25칸).
+  // 남은 시간은 종료 시각 기준이라 탭이 백그라운드여도 어긋나지 않는다. 오늘 완료 수는 이 브라우저에만 저장.
   const $ = id => document.getElementById(id);
+  const ticks = $("ticks");
+  for (let i = 0; i < 60; i++) {
+    const a = i * 6 * Math.PI / 180, long = i % 5 === 0, r1 = long ? 86 : 92;
+    const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    l.setAttribute("x1", r1 * Math.sin(a)); l.setAttribute("y1", -r1 * Math.cos(a));
+    l.setAttribute("x2", 98 * Math.sin(a)); l.setAttribute("y2", -98 * Math.cos(a));
+    l.setAttribute("stroke", "var(--sub)"); l.setAttribute("stroke-width", long ? 2 : 1);
+    ticks.appendChild(l);
+    if (long) {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", 74 * Math.sin(a)); t.setAttribute("y", -74 * Math.cos(a) + 4);
+      t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", "11"); t.setAttribute("fill", "var(--sub)");
+      t.textContent = i; ticks.appendChild(t);
+    }
+  }
   let focusMin = 25, phase = "focus", endAt = null, remain = focusMin * 60, total = remain, timer = null;
   const today = new Date().toISOString().slice(0, 10);
   let done = 0;
   try { const s = JSON.parse(localStorage.getItem("pomo") || "{}"); if (s.d === today) done = s.n || 0; } catch (e) {}
   const save = () => { try { localStorage.setItem("pomo", JSON.stringify({ d: today, n: done })); } catch (e) {} };
   const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  function wedge(sec) {                       // 12시 방향에서 시계 방향으로 남은 분만큼
+    const frac = Math.min(sec / 3600, 0.99999), a = frac * 2 * Math.PI, r = 84;
+    if (frac <= 0) return "";
+    const x = r * Math.sin(a), y = -r * Math.cos(a);
+    return `M0 0 L0 ${-r} A${r} ${r} 0 ${frac > .5 ? 1 : 0} 1 ${x} ${y} Z`;
+  }
   function beep() {
     try {
       const a = new (window.AudioContext || window.webkitAudioContext)();
@@ -69,14 +105,16 @@
     } catch (e) {}
   }
   function draw() {
-    $("time").textContent = fmt(Math.max(0, Math.ceil(remain)));
+    const s = Math.max(0, remain);
+    $("time").textContent = fmt(Math.ceil(s));
     const lbl = phase === "focus" ? "집중" : phase === "long" ? "긴 휴식" : "휴식";
-    $("mode").textContent = lbl; $("mode").className = phase === "focus" ? "focus" : "rest";
-    $("fill").style.width = `${100 * (1 - remain / total)}%`;
-    $("fill").style.background = phase === "focus" ? "var(--focus)" : "var(--rest)";
-    $("count").textContent = `오늘 완료 ${done} 뽀모도로`;
-    $("go").textContent = timer ? "일시정지" : "시작";
-    document.title = `${fmt(Math.max(0, Math.ceil(remain)))} ${lbl}`;
+    $("mode").textContent = lbl;
+    $("mode").style.color = phase === "focus" ? "var(--focus)" : "var(--rest)";
+    $("wedge").setAttribute("d", wedge(s));
+    $("wedge").setAttribute("fill", phase === "focus" ? "var(--focus)" : "var(--rest)");
+    $("count").textContent = `오늘 ${done} 뽀모도로`;
+    $("go").textContent = timer ? "정지" : "시작";
+    document.title = `${fmt(Math.ceil(s))} ${lbl}`;
   }
   function setPhase(p) {
     phase = p;
